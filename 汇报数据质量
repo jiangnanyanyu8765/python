@@ -1,0 +1,166 @@
+# -*- coding: UTF-8 -*-  
+import json
+import sys
+import time
+import uuid
+import json
+import os
+import datetime
+import urllib,cookielib
+import urllib2
+def huipbaohziliang_day(date_id,uuid):
+    hive_cmd = ('''
+       hive -e "
+       use qn_serv;
+       select concat_ws('|',t.ruleid,t.ruledesc,t.ruleattr,t.rulename,cast(t.matchNum as string),cast(t.phoneNum as string)) from (select ruleid, ruledesc, ruleattr,rulename,count(1) as matchNum,count(distinct device_number) as phoneNum
+       from qn_temp_result_data
+       where date_id = '%s'
+       group by ruleid,ruledesc,ruleattr,rulename) t">>'HBZL_DAY_%s_%s_.txt';
+    '''  % (date_id,date_id,uuid))
+    print hive_cmd
+    n=0
+    n=os.system(hive_cmd)
+    if n == 0:
+        return './HBZL_DAY_'+date_id+'_'+str(uuid)+'_.txt'
+    else:
+        return ''    
+
+def huibaozhiliang_month(date_id,uuid):
+    beginday = ''
+    year = date_id[0:4]
+    month = date_id[4:6]
+    day = date_id[6:8]
+    if month == '01':
+        year1 = str(int(year)-1)
+        month1 = '12'
+        beginday = year1 + month1 + day
+    else:
+        month1 = str(int(month)-1).zfill(2)
+        beginday = year+month1+day
+    print '------------*---------',beginday
+    hive_cmd = ('''
+       hive -e "
+       use qn_serv;
+       select concat_ws('|',t.ruleid,t.ruledesc,t.ruleattr,t.rulename,cast(t.matchNum as string),cast(t.phoneNum as string)) from (select ruleid, ruledesc, ruleattr,rulename,count(1) as matchNum,count(distinct device_number) as phoneNum
+       from qn_temp_result_data
+       where date_id between '%s' and '%s'
+       group by ruleid,ruledesc,ruleattr,rulename) t">>'HBZL_MONTH_%s_%s_.txt';
+    '''  % (beginday,date_id,date_id,uuid))    
+    print hive_cmd
+    n=0
+    n=os.system(hive_cmd)
+    if n == 0:
+        return './HBZL_MONTH_'+date_id+'_'+str(uuid)+'_.txt'
+    else:
+        return ''
+      
+def formatSize(bytes):
+    try:
+        bytes = float(bytes)
+        kb = bytes / 1024
+    except:
+        print("传入的字节格式不对")
+        return "Error"
+
+    if kb >= 1024:
+        M = kb / 1024
+        if M >= 1024:
+            G = M / 1024
+            return "%f" % (G)
+        else:
+            return "%f" % (M)
+    else:
+        return "%f" % (kb)
+
+
+def getDocSize(path):
+    try:
+        size = os.path.getsize(path)
+        return formatSize(size)
+    except Exception as err:
+        print(err)
+
+
+def createJson(filePathDay,filePathMonth):
+    fileDaysize = getDocSize(filePathDay)
+    fileMonthsize = getDocSize(filePathMonth)
+    ListDayJson = [] 
+    ListMonthJson = [] 
+    if fileDaysize == 0:
+        print '-----'
+    else:       
+        f = open(filePathDay)     
+        line = f.readline()  
+        while line:
+            line.decode('utf-8')
+            tmplist = line.split('|')
+            ruleId = tmplist[0]
+            ruleQualityName = tmplist[1]
+            matchNum = tmplist[4]
+            phoneNum = tmplist[5].replace('\n','')
+            Btype = ''
+            if tmplist[2] == 'url':
+                Btype= '1'
+            if tmplist[2] == 'app':
+                Btype= '2' 
+            if tmplist[2] == 'tel':
+                Btype= '3'  
+            data = {'ruleId':ruleId,'ruleQualityName':ruleQualityName,'matchNum':matchNum,'phoneNum':phoneNum,'type':Btype}
+            jsonObject = json.dumps(data,ensure_ascii=False)
+            ListDayJson.append(jsonObject)
+            line = f.readline()   
+    if fileMonthsize == 0:
+        print '*******'
+    else:
+        f1 = open(filePathMonth)     
+        line = f1.readline()  
+        while line:
+            line.decode('utf-8')
+            tmplist = line.split('|')
+            ruleId = tmplist[0]
+            print '-------ruleId------',ruleId
+            ruleQualityName = tmplist[1]
+            matchNum = tmplist[4]
+            phoneNum = tmplist[5].replace('\n','')
+            Btype = ''
+            if tmplist[2] == 'url':
+                Btype= '1'
+            if tmplist[2] == 'app':
+                Btype= '2' 
+            if tmplist[2] == 'tel':
+                Btype= '3'  
+            data = {'ruleId':ruleId,'ruleQualityName':ruleQualityName,'matchNum':matchNum,'phoneNum':phoneNum,'type':Btype}
+            jsonObject = json.dumps(data,ensure_ascii=False)
+            ListMonthJson.append(jsonObject)
+            line = f1.readline()  
+    
+    #tmpday = str(ListDayJson)
+    #print tmpday
+    #tmpmonth = str(ListMonthJson)
+    #print tmpmonth 
+    Tmpdata = [{"code":"0","message":"success","dayData":ListDayJson,"allData":ListMonthJson}]
+    json_str = json.dumps(Tmpdata,ensure_ascii=False)  
+    reload(sys)
+    sys.getdefaultencoding() 
+    sys.setdefaultencoding('utf8')        
+    print  '-------------http---------',json_str
+    headers = {'Content-Type': 'application/json'}         
+    #request = urllib2.Request(url='http://10.130.29.221:6001/api/rule/callRule', headers=headers, data=json.dumps(Tmpdata,ensure_ascii=False))
+    request = urllib2.Request(url='http://10.130.31.55:80/api/rule/callRule', headers=headers, data=json.dumps(Tmpdata,ensure_ascii=False))    
+    response = urllib2.urlopen(request)
+    print response.read()     
+    print '-------------'
+def huibao():
+    date_id = time.strftime('%Y%m%d',time.localtime(time.time()))  
+    daypath = huipbaohziliang_day(date_id,uuid.uuid1())
+    monthpath = huibaozhiliang_month(date_id,uuid.uuid1())
+    #daypath = 'E://test/HBZL_DAY_20170802_5550ca8c-772f-11e7-a537-0025909534ce_.txt'
+    #monthpath = 'E://test/HBZL_MONTH_20170802_64c7ac2e-772f-11e7-a537-0025909534ce_.txt'
+    print '-------daypath----',daypath
+    print '-------monthpath----',monthpath
+    createJson(daypath, monthpath)    
+if __name__ == '__main__':
+    print '------huibaoshiliang.py-------begin------'
+    huibao()
+    print '------huibaoshiliang.py-------end------'
+    
